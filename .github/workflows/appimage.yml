@@ -1,0 +1,30 @@
+# Builds the Linux AppImage. Run manually (Actions → Linux AppImage → Run workflow)
+# or automatically on a version tag (v*), in which case it is attached to the release.
+name: Linux AppImage
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-pip gir1.2-gtk-4.0 gir1.2-adw-1 \
+            gir1.2-shumate-1.0 libshumate-1.0-1 libadwaita-1-0 libfuse2t64 file
+      - name: Build
+        run: PIP_BREAK=1 bash construire_appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MBTiles_Fusion-x86_64.AppImage
+          path: MBTiles_Fusion-x86_64.AppImage
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MBTiles_Fusion-x86_64.AppImage
