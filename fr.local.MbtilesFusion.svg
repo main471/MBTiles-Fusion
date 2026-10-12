@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="fond" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#1a5fb4"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="12" width="112" height="108" rx="22" fill="#1c3f73"/>
+  <rect x="8" y="8" width="112" height="108" rx="22" fill="url(#fond)"/>
+  <!-- couche basse -->
+  <path d="M64 86 L104 66 L64 46 L24 66 Z" fill="#99c1f1" opacity="0.55"/>
+  <!-- couche milieu -->
+  <path d="M64 74 L104 54 L64 34 L24 54 Z" fill="#c0dbf8" opacity="0.8"/>
+  <!-- couche haute : la carte -->
+  <path d="M64 62 L104 42 L64 22 L24 42 Z" fill="#ffffff"/>
+  <path d="M44 32 L84 52 M64 22 L64 22 M54 27 L94 47 M74 27 L34 47 M84 32 L44 52"
+        stroke="#3584e4" stroke-width="1.6" opacity="0.35" fill="none"/>
+  <!-- repère -->
+  <circle cx="64" cy="42" r="7" fill="#2ec27e"/>
+  <circle cx="64" cy="42" r="2.6" fill="#ffffff"/>
+  <!-- plus -->
+  <circle cx="98" cy="94" r="15" fill="#2ec27e" stroke="#ffffff" stroke-width="3"/>
+  <path d="M98 86 V102 M90 94 H106" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+</svg>

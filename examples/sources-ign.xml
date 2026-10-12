@@ -1,0 +1,9 @@
+<!DOCTYPE connections>
+<!-- Open-licence sources (IGN Géoplateforme, Etalab Open Licence 2.0).
+     Import: “Importer (QGIS ou MOBAC)” button next to the source list (same format as a QGIS XYZ connections export). -->
+<qgsXYZTilesConnections version="1.0">
+  <xyztiles name="IGN Plan v2" zmin="0" zmax="19"
+    url="https://data.geopf.fr/wmts?SERVICE=WMTS&amp;REQUEST=GetTile&amp;VERSION=1.0.0&amp;LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&amp;STYLE=normal&amp;TILEMATRIXSET=PM&amp;TILEMATRIX={z}&amp;TILEROW={y}&amp;TILECOL={x}&amp;FORMAT=image/png"/>
+  <xyztiles name="IGN Orthophotos" zmin="0" zmax="19"
+    url="https://data.geopf.fr/wmts?SERVICE=WMTS&amp;REQUEST=GetTile&amp;VERSION=1.0.0&amp;LAYER=ORTHOIMAGERY.ORTHOPHOTOS&amp;STYLE=normal&amp;TILEMATRIXSET=PM&amp;TILEMATRIX={z}&amp;TILEROW={y}&amp;TILECOL={x}&amp;FORMAT=image/jpeg"/>
+</qgsXYZTilesConnections>

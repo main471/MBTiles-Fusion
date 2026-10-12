@@ -1,0 +1,48 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Lanceur de l'AppImage MBTiles Fusion.
+# Utilise en priorité GTK 4 / libadwaita / libshumate du système ; sinon, les composants embarqués.
+HERE="$(dirname "$(readlink -f "$0")")"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+PY="${MBTF_PYTHON:-/usr/bin/python3}"
+SCRIPT="$HERE/usr/share/mbtiles-fusion/mbtiles_fusion.py"
+
+teste() {
+  "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1'); from gi.repository import Gtk, Adw" 2>/dev/null
+}
+
+teste_carte() {
+  "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Shumate','1.0'); from gi.repository import Shumate" 2>/dev/null
+}
+
+erreur() {
+  local msg="$1"
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="MBTiles Fusion" --text="$msg" 2>/dev/null
+  else
+    printf "%b\n" "$msg" >&2
+  fi
+  exit 1
+}
+
+[ -x "$PY" ] || erreur "Python 3 est introuvable (/usr/bin/python3)."
+"$PY" -c "import gi" 2>/dev/null || erreur "Le module Python « gi » est absent.\nInstalle-le avec :\nsudo apt install python3-gi"
+
+if ! teste; then
+  # Composants embarqués : bibliothèques d'introspection, puis libadwaita si absente
+  export GI_TYPELIB_PATH="$HERE/usr/lib/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+  if ! ldconfig -p 2>/dev/null | grep -q 'libadwaita-1.so.0'; then
+    export LD_LIBRARY_PATH="$HERE/usr/lib/secours${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+  teste || erreur "GTK 4 ou libadwaita est introuvable.\nInstalle-les avec :\nsudo apt install gir1.2-gtk-4.0 gir1.2-adw-1"
+fi
+
+# Carte : facultative. Sans libshumate, l'emprise se saisit en coordonnées.
+if ! teste_carte; then
+  export GI_TYPELIB_PATH="$HERE/usr/lib/girepository-carte${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+  if ! ldconfig -p 2>/dev/null | grep -q 'libshumate-1.0.so.1'; then
+    export LD_LIBRARY_PATH="$HERE/usr/lib/carte${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+fi
+
+exec "$PY" "$SCRIPT" "$@"

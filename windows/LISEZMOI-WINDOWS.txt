@@ -1,0 +1,17 @@
+MBTiles Fusion — version portable Windows (10/11, 64 bits)
+
+Lancer
+  Double-clic sur « MBTiles Fusion.exe ». Aucune installation.
+
+Dossier
+  MBTiles Fusion.exe   lanceur
+  app\                 programme
+  runtime\             Python, GTK 4, libadwaita, libshumate
+  donnees\             réglages, sources, dernier projet, journal.txt (créé au premier lancement)
+
+Portable
+  Tout reste dans ce dossier : il peut être copié sur une clé USB ou un autre PC.
+  Le cache de tuiles est à l’endroit choisi dans l’application.
+
+En cas de problème
+  Ouvre donnees\journal.txt : les erreurs y sont écrites.

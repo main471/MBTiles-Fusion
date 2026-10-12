@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MBTiles Fusion
+Comment=Télécharger et assembler une carte MBTiles hors ligne : base régionale et zones de zoom
+Exec=mbtiles-fusion
+Icon=fr.local.MbtilesFusion
+Categories=Graphics;Geography;Utility;
+Terminal=false
+StartupWMClass=fr.local.MbtilesFusion
