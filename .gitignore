@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+AppDir/
+*.AppImage
+appimagetool
+runtime-x86_64
+windows/dist/
+windows/*.zip
+windows/icone*.png
+windows/icone.ico
+windows/*.o
+*.mbtiles
+*.mbtiles-wal
+*.mbtiles-shm
