@@ -205,6 +205,7 @@ class Fenetre(Adw.ApplicationWindow):
         for icone, info, fn in (("list-add-symbolic", "Ajouter une source", self.ajouter_source),
                                 ("document-edit-symbolic", "Modifier la source", self.modifier_source),
                                 ("document-open-symbolic", "Importer (QGIS ou MOBAC)", self.importer_sources),
+                                ("document-save-symbolic", "Exporter les sources (XML)", self.exporter_sources),
                                 ("user-trash-symbolic", "Supprimer la source de la liste", self.supprimer_source)):
             b = Gtk.Button(icon_name=icone, valign=Gtk.Align.CENTER)
             b.set_tooltip_text(info)
@@ -564,6 +565,30 @@ class Fenetre(Adw.ApplicationWindow):
         self._ouvrir("Importer des sources", ok,
                      filtre("Sources QGIS ou MOBAC (.xml, .qgs, .qgz, .qlr)",
                             ("*.xml", "*.XML", "*.qgs", "*.qgz", "*.qlr")))
+
+    def exporter_sources(self):
+        if not self.sources:
+            self.erreur("Aucune source à exporter.")
+            return
+        d = Gtk.FileDialog(title="Exporter les sources", filters=filtre("Sources (.xml)", ("*.xml",)),
+                           initial_name="sources-mbtiles-fusion.xml")
+        d.set_initial_folder(Gio.File.new_for_path(str(self.dossier_courant())))
+
+        def fin(dlg, res):
+            try:
+                f = dlg.save_finish(res)
+            except GLib.Error:
+                return
+            chemin = f.get_path()
+            if not chemin.lower().endswith(".xml"):
+                chemin += ".xml"
+            try:
+                n = t.exporter_sources(self.sources, chemin)
+            except Exception as e:
+                self.erreur(f"Export impossible : {e}")
+                return
+            self.toast(f"{n} source(s) exportée(s) : {Path(chemin).name}")
+        d.save(self, None, fin)
 
     def choisir_cache(self, puis=None):
         d = Gtk.FileDialog(title="Dossier du cache de tuiles")

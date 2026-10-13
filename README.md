@@ -29,6 +29,8 @@ into **one MBTiles file**: low zooms for the whole region, high zooms only where
 - **Search** by place name (Nominatim or IGN) or by coordinates: decimal, DMS or **MGRS**.
 - **Source import** from QGIS (XYZ connections export, `.qgs`, `.qgz`, `.qlr`) and MOBAC
   (`customMapSource`). URL templates `{z} {x} {y} {-y} {q} {s}` are supported.
+- **Source export** to an XML file (QGIS XYZ connections format): share your sources, re-import them
+  in MBTiles Fusion with all settings, or load them in QGIS.
 
 ## Download
 

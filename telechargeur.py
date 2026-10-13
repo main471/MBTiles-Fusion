@@ -156,6 +156,41 @@ def _entier(v, defaut):
         return defaut
 
 
+def exporter_sources(sources, chemin):
+    """
+    Écrit les sources au format « connexions XYZ » de QGIS : le fichier se réimporte
+    dans MBTiles Fusion (tous les réglages) et dans QGIS (Gestionnaire des sources de données
+    → XYZ Tiles → Charger les connexions). Les sources vectorielles vont dans un second bloc
+    que QGIS ignore ici, mais que MBTiles Fusion relit.
+    """
+    raster = ET.Element("qgsXYZTilesConnections", version="1.0")
+    vecteur = ET.Element("qgsVectorTileConnections", version="1.0")
+    for s in sources:
+        vec = s.get("format") == "pbf"
+        attrs = {"name": s.get("nom", ""), "url": s.get("url", ""),
+                 "zmin": str(s.get("zoom_min", 0)), "zmax": str(s.get("zoom_max", 19))}
+        if s.get("referer"):
+            attrs["referer"] = s["referer"]
+        for cle, nom in (("format", "mbtf-format"), ("sous_domaines", "mbtf-subdomains"),
+                         ("user_agent", "mbtf-user-agent"), ("attribution", "mbtf-attribution")):
+            v = s.get(cle)
+            if v and not (cle == "format" and v == "auto"):
+                attrs[nom] = str(v)
+        ET.SubElement(vecteur if vec else raster, "vectortile" if vec else "xyztiles", attrs)
+    racine = raster
+    if len(vecteur):
+        if len(raster):
+            # Les deux types : un conteneur que MBTiles Fusion lit (QGIS : importer séparément).
+            racine = ET.Element("mbtfSources", version="1.0")
+            racine.extend([raster, vecteur])
+        else:
+            racine = vecteur
+    ET.indent(racine)
+    texte = "<!DOCTYPE connections>\n" + ET.tostring(racine, encoding="unicode") + "\n"
+    Path(chemin).write_text(texte, encoding="utf-8")
+    return len(sources)
+
+
 def _url_qgis(url):
     """QGIS encode parfois les accolades (%7Bz%7D) : on les rétablit."""
     return re.sub(r"%7[Dd]", "}", re.sub(r"%7[Bb]", "{", (url or "").strip()))
@@ -211,15 +246,22 @@ def importer_sources(chemin):
     except ET.ParseError as e:
         raise ValueError(f"XML illisible ({e})")
     sources = []
-    if racine.tag in ("qgsXYZTilesConnections", "qgsVectorTileConnections"):
-        vecteur = racine.tag == "qgsVectorTileConnections"
-        for e in racine.iter("vectortile" if vecteur else "xyztiles"):
+    if racine.tag in ("qgsXYZTilesConnections", "qgsVectorTileConnections", "mbtfSources"):
+        for e in racine.iter():
+            if e.tag not in ("xyztiles", "vectortile"):
+                continue
+            vecteur = e.tag == "vectortile"
             a = e.attrib
+            fmt = a.get("mbtf-format")
             sources.append(nouvelle_source(
                 nom=a.get("name") or "Source QGIS", url=_url_qgis(a.get("url")),
                 zoom_min=_entier(a.get("zmin"), 0), zoom_max=_entier(a.get("zmax"), 19),
-                format="pbf" if vecteur else "auto",
-                referer=a.get("referer") or a.get("http-header__referer") or ""))
+                format=fmt if fmt in FORMATS else ("pbf" if vecteur else "auto"),
+                referer=a.get("referer") or a.get("http-header__referer") or "",
+                # Champs propres à MBTiles Fusion (ignorés par QGIS)
+                sous_domaines=a.get("mbtf-subdomains") or "",
+                user_agent=a.get("mbtf-user-agent") or "",
+                attribution=a.get("mbtf-attribution") or ""))
     elif racine.tag in ("qgis", "qlr"):
         sources = _sources_projet_qgis(racine)
     elif racine.tag in ("customMapSource", "customMapSources"):
