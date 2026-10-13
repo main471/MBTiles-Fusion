@@ -49,6 +49,7 @@ except Exception:
     HTTP2_DISPONIBLE = False
 UTILISER_HTTP2 = False  # réglage « HTTP/2 » des options avancées
 
+TAILLE_MAX_REPONSE = 16 * 1024 * 1024  # une tuile dépasse rarement 1 Mo
 UA_DEFAUT = f"MBTilesFusion/{m.VERSION} (usage hors ligne personnel)"
 FORMATS = ("auto", "png", "jpg", "webp", "pbf")
 TYPES_MIME = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",
@@ -385,6 +386,8 @@ class ClientHTTP:
         self.versions.add("HTTP/1.1")
         u = urllib.parse.urlsplit(url)
         schema = u.scheme.lower()
+        if schema not in ("http", "https") or not u.hostname:
+            raise ValueError(f"adresse non prise en charge : {schema or '?'}://")
         port = u.port or (443 if schema == "https" else 80)
         chemin = (u.path or "/") + ("?" + u.query if u.query else "")
         for essai in (1, 2):
@@ -396,7 +399,11 @@ class ClientHTTP:
             try:
                 c.request("GET", cible, headers=h)
                 r = c.getresponse()
-                corps = r.read()
+                corps = r.read(TAILLE_MAX_REPONSE + 1)
+                if len(corps) > TAILLE_MAX_REPONSE:
+                    c.close()
+                    self._connexions().pop((schema, u.hostname, port), None)
+                    raise ValueError("réponse trop volumineuse pour une tuile")
                 hs = {k.lower(): v for k, v in r.getheaders()}
                 if hs.get("connection", "").lower() == "close":
                     c.close()
@@ -1025,7 +1032,18 @@ class Fournisseur:
             self.source = dict(source) if source else None
             self.cle = cle
             self.cache = cache
-            self.pile.clear()  # les demandes de l'ancienne source sont abandonnées
+            # Les demandes de l'ancienne source sont abandonnées : on répond « vide » à
+            # leurs rappels, sinon elles resteraient en attente pour toujours (tuiles jamais
+            # rechargées si l'on revient à cette source).
+            abandon = []
+            for k, _annulee in self.pile:
+                abandon.extend(self.attente.pop(k, []))
+            self.pile.clear()
+        for r in abandon:
+            try:
+                r(None)
+            except Exception:
+                pass
         return cle
 
     def definir_couverture(self, cache, niveaux, niveau):

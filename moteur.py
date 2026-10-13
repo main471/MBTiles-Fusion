@@ -21,7 +21,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-VERSION = "5.3"
+VERSION = "5.4"
 LAT_MAX = 85.0511287798
 
 # Pages SQLite de la carte finale (doit rester cohérent avec generer()).

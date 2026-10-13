@@ -214,7 +214,9 @@ class Fenetre(Adw.ApplicationWindow):
             boutons.append(b)
         g.set_header_suffix(boutons)
         self.c_source = Adw.ComboRow(title="Source")
-        self.c_source.connect("notify::selected", lambda *_: self._source_choisie())
+        # Traité après le signal (jamais pendant) : évite de modifier la liste en cours d'émission.
+        self.c_source.connect("notify::selected",
+                              lambda *_: GLib.idle_add(lambda: self._source_choisie() and False))
         g.add(self.c_source)
 
         # Base
@@ -465,10 +467,15 @@ class Fenetre(Adw.ApplicationWindow):
     def maj_liste_sources(self):
         self._bloque = True
         noms = [s["nom"] for s in self.sources] or ["Aucune source — ajoute-en une"]
-        self.c_source.set_model(Gtk.StringList.new(noms))
+        # Remplacer le modèle seulement s'il change : un set_model pendant un signal
+        # de la liste déroulante fait planter GTK.
+        if noms != getattr(self, "_noms_sources", None):
+            self._noms_sources = noms
+            self.c_source.set_model(Gtk.StringList.new(noms))
         url = (self.source() or {}).get("url")
         idx = next((i for i, s in enumerate(self.sources) if s["url"] == url), 0)
-        self.c_source.set_selected(idx)
+        if self.c_source.get_selected() != idx:
+            self.c_source.set_selected(idx)
         self._bloque = False
         s = self.source()
         if s:
@@ -480,7 +487,10 @@ class Fenetre(Adw.ApplicationWindow):
     def _source_choisie(self):
         if self._bloque or not self.sources:
             return
-        s = self.sources[self.c_source.get_selected()]
+        i = self.c_source.get_selected()
+        if not 0 <= i < len(self.sources):
+            return
+        s = self.sources[i]
         if self.source() and self.source()["url"] == s["url"]:
             return
         self._memoriser()
