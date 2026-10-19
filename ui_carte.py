@@ -263,11 +263,14 @@ class CarteEditable(Gtk.Overlay):
 
     def _remonter_couches(self):
         """set_map_source ajoute le fond par-dessus : on remonte couverture, rectangles et poignées."""
-        self.map.remove_layer(self.couche_poignees)
+        def retirer(c):  # une couche pas encore ajoutée ne peut pas être retirée
+            if c is not None and c.get_parent() is not None:
+                self.map.remove_layer(c)
+        retirer(self.couche_poignees)
         for c in self.couches.values():
-            self.map.remove_layer(c)
+            retirer(c)
         if self.couche_couv is not None:
-            self.map.remove_layer(self.couche_couv)
+            retirer(self.couche_couv)
             self.map.add_layer(self.couche_couv)
         for cle in self.ordre:
             if cle in self.couches:
