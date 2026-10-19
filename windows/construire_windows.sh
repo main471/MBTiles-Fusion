@@ -137,5 +137,6 @@ except Exception as e:
 echo "— Archive…"
 cp LISEZMOI-WINDOWS.txt "$DIST/LISEZMOI.txt"
 (cd dist && zip -qr ../MBTiles_Fusion_Windows_portable.zip MBTiles_Fusion)
+sha256sum MBTiles_Fusion_Windows_portable.zip > MBTiles_Fusion_Windows_portable.zip.sha256
 echo "OK : $(pwd)/MBTiles_Fusion_Windows_portable.zip ($(du -h MBTiles_Fusion_Windows_portable.zip | cut -f1))"
 [ $CARTE = 1 ] || echo "⚠ Construite sans libshumate (pas de carte)."

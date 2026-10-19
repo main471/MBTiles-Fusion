@@ -17,7 +17,9 @@ chmod +x "$APP/AppRun"
 cp mbtiles_fusion.py moteur.py telechargeur.py geo.py ui_carte.py ui_sources.py "$APP/usr/share/mbtiles-fusion/"
 # HTTP/2 (facultatif) : httpx + h2, en Python pur, dans vendor/
 if python3 -m pip --version >/dev/null 2>&1; then
-  python3 -m pip install -q --no-compile --target "$APP/usr/share/mbtiles-fusion/vendor" httpx h2 \
+  # Versions figées et vérifiées par empreinte (requirements-http2.txt)
+  python3 -m pip install -q --no-compile --require-hashes --only-binary=:all: \
+    --target "$APP/usr/share/mbtiles-fusion/vendor" -r requirements-http2.txt \
     ${PIP_BREAK:+--break-system-packages} 2>/dev/null \
     || echo "⚠ httpx/h2 non installés : l'option HTTP/2 sera indisponible"
   rm -rf "$APP/usr/share/mbtiles-fusion/vendor/"*.dist-info "$APP/usr/share/mbtiles-fusion/vendor/bin"
@@ -51,12 +53,23 @@ for l in libshumate-1.0.so.1 libprotobuf-c.so.1; do
   copie_lib "$l" "$APP/usr/lib/carte"
 done
 
-# appimagetool et runtime (téléchargés une fois)
-[ -x appimagetool ] || { curl -sSL -o appimagetool \
-  https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage; chmod +x appimagetool; }
-[ -f runtime-x86_64 ] || curl -sSL -o runtime-x86_64 \
-  https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+# appimagetool et runtime : versions figées, empreintes SHA-256 vérifiées.
+OUTIL_URL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+OUTIL_SHA=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+RUNTIME_SHA=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+recuperer() {  # fichier url empreinte
+  if [ ! -f "$1" ] || ! echo "$3  $1" | sha256sum -c --status; then
+    curl -sSfL -o "$1.tmp" "$2"
+    echo "$3  $1.tmp" | sha256sum -c --status || { rm -f "$1.tmp"; echo "✖ Empreinte invalide : $1" >&2; exit 1; }
+    mv "$1.tmp" "$1"
+  fi
+}
+recuperer appimagetool "$OUTIL_URL" "$OUTIL_SHA"
+recuperer runtime-x86_64 "$RUNTIME_URL" "$RUNTIME_SHA"
+chmod +x appimagetool
 
 ARCH=x86_64 ./appimagetool --appimage-extract-and-run --runtime-file runtime-x86_64 \
   "$APP" MBTiles_Fusion-x86_64.AppImage
-echo "OK : MBTiles_Fusion-x86_64.AppImage"
+sha256sum MBTiles_Fusion-x86_64.AppImage > MBTiles_Fusion-x86_64.AppImage.sha256
+echo "OK : MBTiles_Fusion-x86_64.AppImage ($(cut -c1-16 MBTiles_Fusion-x86_64.AppImage.sha256)…)"

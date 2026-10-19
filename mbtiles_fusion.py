@@ -13,6 +13,7 @@ Interface : GTK 4 + libadwaita, carte libshumate.
 """
 
 import json
+import urllib.parse
 import os
 import queue
 import re
@@ -146,7 +147,11 @@ class Fenetre(Adw.ApplicationWindow):
 
         # ---------- état initial
         d = self._lire_json(FICHIER_PROJET)
-        if d and d.get("version") == 3:
+        try:
+            d = t.valider_projet(d, garder_externes=True) if d else None
+        except ValueError:
+            d = None
+        if d:
             self.charger_projet(d, centrer=True)
         else:
             src = self.sources[0] if self.sources else None
@@ -394,8 +399,7 @@ class Fenetre(Adw.ApplicationWindow):
 
     def _ecrire_config(self):
         try:
-            DOSSIER_CONFIG.mkdir(parents=True, exist_ok=True)
-            FICHIER_CONFIG.write_text(json.dumps(self.config, indent=2, ensure_ascii=False), encoding="utf-8")
+            m.ecrire_prive(FICHIER_CONFIG, json.dumps(self.config, indent=2, ensure_ascii=False))
         except OSError:
             pass
 
@@ -1302,8 +1306,10 @@ class Fenetre(Adw.ApplicationWindow):
         return int(self.config.get("rafraichir_mois", 6))
 
     def limite_date(self):
+        """Tuiles plus anciennes à revérifier. Même sans rafraîchissement, les tuiles importées
+        d'une carte (datées « à vérifier ») sont toujours revérifiées."""
         mois = self.mois_rafraichir()
-        return time.time() - mois * 30.44 * 86400 if mois > 0 else None
+        return time.time() - mois * 30.44 * 86400 if mois > 0 else m.DATE_A_VERIFIER + 1
 
     def _fil_calcul(self):
         while True:
@@ -1451,19 +1457,19 @@ class Fenetre(Adw.ApplicationWindow):
     def _sauver(self):
         self._minuterie_sauvegarde = 0
         try:
-            DOSSIER_CONFIG.mkdir(parents=True, exist_ok=True)
-            FICHIER_PROJET.write_text(json.dumps(self.projet, indent=2, ensure_ascii=False), encoding="utf-8")
+            m.ecrire_prive(FICHIER_PROJET, json.dumps(self.projet, indent=2, ensure_ascii=False))
         except OSError:
             pass
         return False
 
     def charger_projet(self, p, centrer=False):
+        """`p` doit avoir été validé (t.valider_projet)."""
         p = dict(projet_vide(), **p)
         src = p.get("source")
         if src and src.get("url"):
             locale = next((s for s in self.sources if s["url"] == src["url"]), None)
             if not locale:
-                locale = t.nouvelle_source(**{k: v for k, v in src.items() if k != "id" and v is not None})
+                locale = dict(src)
                 self.sources.append(locale)
                 self._enregistrer_sources()
             p["source"] = dict(locale)
@@ -1489,13 +1495,38 @@ class Fenetre(Adw.ApplicationWindow):
 
         def ok(chemin):
             p = m.lire_projet(chemin)
-            if not p:
-                self.confirmer("Carte sans projet",
-                               f"{Path(chemin).name} n’a pas été créée par MBTiles Fusion 3.\n"
-                               "Tu peux l’ajouter à la carte actuelle comme fichier externe.",
-                               "Ajouter comme externe",
-                               lambda: (self.projet["externes"].append(chemin), self.tout_rafraichir()))
+            if p:
+                try:
+                    # Une carte peut venir d'un tiers : projet reconstruit et borné,
+                    # fichiers externes ignorés (ils pointeraient vers ton disque).
+                    externes = p.get("externes") if isinstance(p.get("externes"), list) else []
+                    p = t.valider_projet(p)
+                except ValueError as e:
+                    self.erreur(f"Projet de la carte illisible : {e}")
+                    return
+                if externes:
+                    self.journal(f"{len(externes)} fichier(s) externe(s) de la carte ignoré(s) : "
+                                 "ajoute-les toi-même si besoin.")
+                src = p.get("source")
+                if src and not any(s["url"] == src["url"] for s in self.sources):
+                    hote = urllib.parse.urlsplit(src["url"]).hostname or "?"
+                    self.confirmer(
+                        "Nouvelle source",
+                        f"Cette carte utilise une source absente de ta liste :\n\n« {src['nom']} »\n"
+                        f"Serveur : {hote}\n\nL'ouvrir ajoute cette source et contacte ce serveur "
+                        "pour afficher le fond de carte. Ne le fais que si tu fais confiance à "
+                        "l'auteur de la carte.",
+                        "Ajouter et ouvrir", lambda: appliquer(chemin, p))
+                    return
+                appliquer(chemin, p)
                 return
+            self.confirmer("Carte sans projet",
+                           f"{Path(chemin).name} n’a pas été créée par MBTiles Fusion 3.\n"
+                           "Tu peux l’ajouter à la carte actuelle comme fichier externe.",
+                           "Ajouter comme externe",
+                           lambda: (self.projet["externes"].append(chemin), self.tout_rafraichir()))
+
+        def appliquer(chemin, p):
             parties = self._parties(chemin)
             if parties:  # carte découpée : on travaille sur le nom commun « carte.mbtiles »
                 chemin_base = str(Path(chemin).with_name(re.sub(r"_\d+$", "", Path(chemin).stem) + ".mbtiles"))

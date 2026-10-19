@@ -32,8 +32,7 @@ def charger_sources():
 
 
 def enregistrer_sources(sources):
-    DOSSIER_CONFIG.mkdir(parents=True, exist_ok=True)
-    FICHIER_SOURCES.write_text(json.dumps(sources, indent=2, ensure_ascii=False), encoding="utf-8")
+    m.ecrire_prive(FICHIER_SOURCES, json.dumps(sources, indent=2, ensure_ascii=False))
 
 
 def spin(titre, mini, maxi, pas, chiffres, valeur, sous_titre=None):

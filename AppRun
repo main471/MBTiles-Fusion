@@ -7,12 +7,14 @@ export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/sha
 PY="${MBTF_PYTHON:-/usr/bin/python3}"
 SCRIPT="$HERE/usr/share/mbtiles-fusion/mbtiles_fusion.py"
 
+# Les tests s'exécutent depuis « / » : un module homonyme (gi.py…) placé dans le dossier
+# courant ne peut pas être chargé à la place du vrai.
 teste() {
-  "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1'); from gi.repository import Gtk, Adw" 2>/dev/null
+  (cd / && "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1'); from gi.repository import Gtk, Adw" 2>/dev/null)
 }
 
 teste_carte() {
-  "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Shumate','1.0'); from gi.repository import Shumate" 2>/dev/null
+  (cd / && "$PY" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Shumate','1.0'); from gi.repository import Shumate" 2>/dev/null)
 }
 
 erreur() {
@@ -26,7 +28,7 @@ erreur() {
 }
 
 [ -x "$PY" ] || erreur "Python 3 est introuvable (/usr/bin/python3)."
-"$PY" -c "import gi" 2>/dev/null || erreur "Le module Python « gi » est absent.\nInstalle-le avec :\nsudo apt install python3-gi"
+(cd / && "$PY" -c "import gi" 2>/dev/null) || erreur "Le module Python « gi » est absent.\nInstalle-le avec :\nsudo apt install python3-gi"
 
 if ! teste; then
   # Composants embarqués : bibliothèques d'introspection, puis libadwaita si absente

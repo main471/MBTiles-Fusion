@@ -50,6 +50,8 @@ See [Releases](../../releases):
 4. Check the estimate, choose the output file, click **Générer la carte**.
 5. Copy the `.mbtiles` to your phone (ATAK: `atak/imagery/`, AlpineQuest: its maps folder).
 
+Step-by-step guide: [Tutorial (English)](docs/TUTORIAL.md) · [Tutoriel (français)](docs/TUTORIEL.md)
+
 ## Tile sources and legal use
 
 **MBTiles Fusion ships with no tile source.** You are responsible for complying with the terms of
@@ -65,6 +67,18 @@ Sources that allow it include:
 
 Network settings (*Réseau*): start with 6–16 simultaneous requests and 20–60 requests/s.
 Higher values increase the risk of being blocked.
+
+## Security
+
+- **Verify downloads**: each release file comes with a `.sha256` file.
+  Linux: `sha256sum -c MBTiles_Fusion-x86_64.AppImage.sha256`.
+  Windows (PowerShell): `Get-FileHash MBTiles_Fusion_Windows_portable.zip` and compare.
+- **Maps from other people**: opening a `.mbtiles` you received never adds its tile source
+  silently (you are asked first), ignores its external files, and marks its tiles as
+  "to verify": they are checked against the server at the next generation.
+- **Settings** (sources, which may contain API keys) are readable by your user account only.
+- **Builds**: GitHub Actions are pinned to commit SHAs; Python dependencies and AppImage tools
+  are pinned and checked by SHA-256.
 
 ## Compatibility notes
 

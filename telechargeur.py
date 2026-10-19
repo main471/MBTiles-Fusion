@@ -50,6 +50,8 @@ except Exception:
 UTILISER_HTTP2 = False  # réglage « HTTP/2 » des options avancées
 
 TAILLE_MAX_REPONSE = 16 * 1024 * 1024  # une tuile dépasse rarement 1 Mo
+TAILLE_MAX_IMPORT = 64 * 1024 * 1024    # fichier de sources (XML, projet QGIS)
+ZOOM_MAX_ABSOLU = 24
 UA_DEFAUT = f"MBTilesFusion/{m.VERSION} (usage hors ligne personnel)"
 FORMATS = ("auto", "png", "jpg", "webp", "pbf")
 TYPES_MIME = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",
@@ -152,9 +154,98 @@ def entetes_source(source):
 
 def _entier(v, defaut):
     try:
-        return max(0, min(24, int(float(v))))
-    except (TypeError, ValueError):
+        return max(0, min(ZOOM_MAX_ABSOLU, int(float(v))))
+    except (TypeError, ValueError, OverflowError):
         return defaut
+
+
+def _texte(v, longueur=2000):
+    return v[:longueur] if isinstance(v, str) else ""
+
+
+def _nombre(v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ValueError("nombre attendu")
+    v = float(v)
+    if v != v or v in (float("inf"), float("-inf")):
+        raise ValueError("nombre invalide")
+    return v
+
+
+def _zoom(v):
+    return int(max(0, min(ZOOM_MAX_ABSOLU, _nombre(v))))
+
+
+def _emprise_valide(e):
+    if not isinstance(e, (list, tuple)) or len(e) != 4:
+        raise ValueError("emprise invalide")
+    o, s_, e_, n = (_nombre(v) for v in e)
+    o, e_ = sorted((max(-180.0, min(180.0, o)), max(-180.0, min(180.0, e_))))
+    s_, n = sorted((max(-85.06, min(85.06, s_)), max(-85.06, min(85.06, n))))
+    if o == e_ or s_ == n:
+        raise ValueError("emprise vide")
+    return [o, s_, e_, n]
+
+
+def valider_source(src):
+    """Source venue d'un fichier : champs typés, URL http(s), zooms bornés. Lève ValueError."""
+    if not isinstance(src, dict):
+        raise ValueError("source invalide")
+    url = normaliser_modele(_texte(src.get("url")))
+    sch = urllib.parse.urlsplit(url).scheme.lower()
+    if sch not in ("http", "https"):
+        raise ValueError("adresse de source non prise en charge")
+    zmin, zmax = _zoom(src.get("zoom_min", 0)), _zoom(src.get("zoom_max", 19))
+    fmt = src.get("format") if src.get("format") in FORMATS else "auto"
+    return nouvelle_source(nom=_texte(src.get("nom"), 200) or "Source", url=url,
+                           sous_domaines=_texte(src.get("sous_domaines"), 200), format=fmt,
+                           zoom_min=min(zmin, zmax), zoom_max=max(zmin, zmax),
+                           user_agent=_texte(src.get("user_agent"), 500),
+                           referer=_texte(src.get("referer"), 2000),
+                           attribution=_texte(src.get("attribution"), 2000))
+
+
+def valider_projet(p, garder_externes=False):
+    """
+    Projet lu dans un fichier (carte .mbtiles ou dernier projet) : reconstruit champ par champ,
+    types vérifiés, zooms bornés (0–24), emprises bornées. Lève ValueError si inutilisable.
+    Les fichiers externes ne sont gardés que pour un projet local (garder_externes).
+    """
+    if not isinstance(p, dict) or p.get("version") != 3:
+        raise ValueError("projet absent ou d'une version inconnue")
+    res = {"version": 3, "nom": _texte(p.get("nom"), 200), "source": None, "base": None, "zones": [],
+           "externes": [], "sortie": _texte(p.get("sortie"), 4096),
+           "options": {"dedup": True, "decoupe": False}}
+    if p.get("source"):
+        res["source"] = valider_source(p["source"])
+    b = p.get("base")
+    if b:
+        if not isinstance(b, dict):
+            raise ValueError("base invalide")
+        zmin, zmax = _zoom(b.get("zmin", 0)), _zoom(b.get("zmax", 12))
+        res["base"] = {"emprise": _emprise_valide(b.get("emprise")), "zmin": min(zmin, zmax),
+                       "zmax": max(zmin, zmax)}
+    zones = p.get("zones") or []
+    if not isinstance(zones, list):
+        raise ValueError("zones invalides")
+    for i, z in enumerate(zones[:500]):
+        if not isinstance(z, dict):
+            continue
+        try:
+            couleur = int(_nombre(z.get("couleur", i))) % 64
+        except ValueError:
+            couleur = i % 64
+        ident = _texte(z.get("id"), 32)
+        res["zones"].append({"id": ident if re.fullmatch(r"\w{1,32}", ident or "") else uuid.uuid4().hex[:8],
+                             "nom": _texte(z.get("nom"), 200) or f"Zone {i + 1}",
+                             "emprise": _emprise_valide(z.get("emprise")),
+                             "zmax": _zoom(z.get("zmax", 16)), "couleur": couleur})
+    if garder_externes and isinstance(p.get("externes"), list):
+        res["externes"] = [e for e in p["externes"] if isinstance(e, str)][:100]
+    o = p.get("options")
+    if isinstance(o, dict):
+        res["options"] = {"dedup": bool(o.get("dedup", True)), "decoupe": bool(o.get("decoupe", False))}
+    return res
 
 
 def exporter_sources(sources, chemin):
@@ -239,8 +330,13 @@ def importer_sources(chemin):
             nom = next((n for n in z.namelist() if n.lower().endswith(".qgs")), None)
             if not nom:
                 raise ValueError("aucun projet .qgs dans l’archive .qgz")
-            brut = z.read(nom)
+            with z.open(nom) as f:  # lecture plafonnée : une archive piégée ne sature pas la mémoire
+                brut = f.read(TAILLE_MAX_IMPORT + 1)
+            if len(brut) > TAILLE_MAX_IMPORT:
+                raise ValueError("projet QGIS trop volumineux")
     else:
+        if os.path.getsize(chemin) > TAILLE_MAX_IMPORT:
+            raise ValueError("fichier trop volumineux pour une liste de sources")
         brut = Path(chemin).read_bytes()
     try:
         racine = _lire_xml(brut.decode("utf-8-sig", errors="replace"))
@@ -308,7 +404,7 @@ class ClientHTTP:
         if HTTP2_DISPONIBLE and (UTILISER_HTTP2 if http2 is None else http2):
             try:
                 self.hx = httpx.Client(http2=True, timeout=delai, verify=self.ssl, trust_env=True,
-                                       follow_redirects=True,
+                                       follow_redirects=False,  # comme en HTTP/1.1
                                        limits=httpx.Limits(max_connections=32, max_keepalive_connections=16))
             except Exception:
                 self.hx = None
@@ -380,9 +476,15 @@ class ClientHTTP:
     def get(self, url, entetes):
         """Retourne (statut, en-têtes en minuscules, corps)."""
         if self.hx is not None and url.startswith("https://"):
-            r = self.hx.get(url, headers=entetes)
-            self.versions.add(r.http_version)
-            return r.status_code, {k.lower(): v for k, v in r.headers.items()}, r.content
+            with self.hx.stream("GET", url, headers=entetes) as r:
+                self.versions.add(r.http_version)
+                morceaux, total = [], 0
+                for m_ in r.iter_bytes():
+                    total += len(m_)
+                    if total > TAILLE_MAX_REPONSE:
+                        raise ValueError("réponse trop volumineuse pour une tuile")
+                    morceaux.append(m_)
+                return r.status_code, {k.lower(): v for k, v in r.headers.items()}, b"".join(morceaux)
         self.versions.add("HTTP/1.1")
         u = urllib.parse.urlsplit(url)
         schema = u.scheme.lower()
@@ -639,7 +741,7 @@ def ouvrir_cache_ecriture(cache, source):
             raise ValueError(f"le cache {Path(cache).name} appartient à une autre source "
                              f"({ancienne.get('nom', '?')})")
     os.makedirs(os.path.dirname(os.path.abspath(cache)), exist_ok=True)
-    con = sqlite3.connect(cache, isolation_level=None, check_same_thread=False, timeout=15)
+    con = m.connecter(cache, isolation_level=None, check_same_thread=False, timeout=15)
     con.execute("PRAGMA journal_mode = WAL")
     con.execute("PRAGMA synchronous = NORMAL")
     m.creer_schema_cache(con)
@@ -1147,7 +1249,7 @@ class Fournisseur:
         if chemin not in cons:
             try:
                 url = "file:" + urllib.request.pathname2url(os.path.abspath(chemin)) + "?mode=ro"
-                con = sqlite3.connect(url, uri=True, check_same_thread=False)
+                con = m.connecter(url, uri=True, check_same_thread=False)
             except sqlite3.Error:
                 return None
             cons[chemin] = con

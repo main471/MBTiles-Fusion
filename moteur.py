@@ -21,7 +21,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-VERSION = "5.4"
+VERSION = "5.5"
 LAT_MAX = 85.0511287798
 
 # Pages SQLite de la carte finale (doit rester cohérent avec generer()).
@@ -53,6 +53,54 @@ def remplacer(source, cible, essais=10):
                 raise PermissionError(f"{Path(cible).name} est ouvert par un autre programme : "
                                       "ferme-le puis relance la génération.")
             time.sleep(0.5)
+
+
+DATE_A_VERIFIER = 1  # date d'une tuile en cache dont l'origine n'est pas sûre
+
+
+def ecrire_prive(chemin, texte):
+    """
+    Écrit un fichier de réglages lisible par son seul propriétaire (0600), de façon atomique :
+    il peut contenir des clés d'API (URL des sources).
+    """
+    chemin = Path(chemin)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(chemin.parent, 0o700)
+    except OSError:
+        pass
+    tmp = chemin.with_name(chemin.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(texte)
+    try:
+        os.chmod(tmp, 0o600)  # si le fichier temporaire existait déjà avec d'autres droits
+    except OSError:
+        pass
+    remplacer(tmp, chemin)
+
+
+def securiser(con):
+    """
+    Durcit une connexion SQLite qui peut lire des fichiers venus d'ailleurs (cartes reçues) :
+    les vues et déclencheurs d'un fichier ne peuvent pas appeler de fonctions à effet de bord,
+    et le schéma ne peut pas être modifié par des moyens détournés.
+    """
+    try:
+        con.execute("PRAGMA trusted_schema = OFF")
+    except sqlite3.Error:
+        pass
+    defensif = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)
+    if defensif is not None and hasattr(con, "setconfig"):
+        try:
+            con.setconfig(defensif, True)
+        except sqlite3.Error:
+            pass
+    return con
+
+
+def connecter(chemin, **kw):
+    return securiser(sqlite3.connect(chemin, **kw))
 
 
 def taille_lisible(octets):
@@ -210,7 +258,7 @@ def sql_valide(fmt, col="tile_data"):
 
 def ouvrir_lecture(chemin):
     url = "file:" + urllib.request.pathname2url(os.path.abspath(chemin)) + "?mode=ro"
-    return sqlite3.connect(url, uri=True)
+    return connecter(url, uri=True)
 
 
 def table_existe(con, nom, schema="main"):
@@ -471,7 +519,7 @@ def estimer(base, zones, progression=lambda f: None, annule=None):
     analyses = [analyser(s) for s in sources]
     seuil = analyses[0]["info"]["zoom_max"]
     dossier = tempfile.mkdtemp(prefix="mbtf-estim-")
-    con = sqlite3.connect(os.path.join(dossier, "k.db"), isolation_level=None)
+    con = connecter(os.path.join(dossier, "k.db"), isolation_level=None)
     try:
         con.execute("PRAGMA journal_mode = OFF")
         con.execute("PRAGMA synchronous = OFF")
@@ -550,7 +598,7 @@ def generer(base, zones, sortie, journal=print, progression=lambda f: None):
 
     emprises = []
     trace_zones = []
-    con = sqlite3.connect(tmp, isolation_level=None)
+    con = connecter(tmp, isolation_level=None)
     try:
         con.execute("PRAGMA journal_mode = OFF")
         con.execute("PRAGMA synchronous = OFF")
@@ -938,7 +986,7 @@ def importer_vers_cache(carte, cache, projet, source_json):
     if not niveaux:
         return 0
     os.makedirs(os.path.dirname(os.path.abspath(cache)), exist_ok=True)
-    con = sqlite3.connect(cache, isolation_level=None)
+    con = connecter(cache, isolation_level=None)
     try:
         creer_schema_cache(con)
         meta = lire_metadata(con)
@@ -951,10 +999,10 @@ def importer_vers_cache(carte, cache, projet, source_json):
         valide = sql_valide(fmt)
         if not meta.get("format"):
             con.execute("INSERT OR IGNORE INTO metadata VALUES ('format', ?)", (fmt,))
-        try:
-            ts = datetime.datetime.fromisoformat(meta_carte["mbtf_genere_le"]).timestamp()
-        except (KeyError, ValueError):
-            ts = time.time()
+        # Tuiles d'une carte reçue : rien ne garantit qu'elles viennent vraiment de la source
+        # annoncée. Elles sont datées « à vérifier » : la prochaine génération les compare au
+        # serveur et remplace celles qui diffèrent.
+        ts = DATE_A_VERIFIER
         ajout = 0
         con.execute("BEGIN")
         for z, emprises in sorted(niveaux.items()):
@@ -997,7 +1045,7 @@ def purger_cache(cache, niveaux, journal=print):
     le fichier. Retourne (tuiles supprimées, octets libérés).
     """
     avant = os.path.getsize(cache)
-    con = sqlite3.connect(cache, isolation_level=None)
+    con = connecter(cache, isolation_level=None)
     try:
         con.execute("CREATE TEMP TABLE garder (z INTEGER, x0 INTEGER, x1 INTEGER, r0 INTEGER, r1 INTEGER)")
         for z, emprises in niveaux.items():
@@ -1145,7 +1193,7 @@ def _empreinte(donnees):
 def _nouvelle_carte(chemin, dedup):
     if os.path.exists(chemin):
         os.remove(chemin)
-    con = sqlite3.connect(chemin, isolation_level=None)
+    con = connecter(chemin, isolation_level=None)
     con.execute("PRAGMA journal_mode = OFF")
     con.execute("PRAGMA synchronous = OFF")
     con.execute(f"PRAGMA page_size = {TAILLE_PAGE}")
@@ -1202,7 +1250,7 @@ def _decouper(tmp, sortie, dedup, seuil_base, limite, journal):
     """
     budget = limite * 0.96
     p = Path(sortie)
-    src = sqlite3.connect(tmp)
+    src = connecter(tmp)
     meta = lire_metadata(src)
     table = "map" if dedup else "tiles"
     colonne = "tile_id" if dedup else "NULL"
@@ -1257,7 +1305,7 @@ def _decouper(tmp, sortie, dedup, seuil_base, limite, journal):
 
     finales = []
     for i, chemin in enumerate(parties, start=1):
-        c = sqlite3.connect(chemin, isolation_level=None)
+        c = connecter(chemin, isolation_level=None)
         c.executemany("INSERT OR REPLACE INTO metadata VALUES (?, ?)", meta.items())
         contenu = _meta_contenu(c, table)
         if contenu:
